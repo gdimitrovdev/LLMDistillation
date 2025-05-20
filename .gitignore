@@ -173,5 +173,6 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-Data/dataset_with_predictions.jsonl
-student_model_output
+data_generation/data
+
+output_models
