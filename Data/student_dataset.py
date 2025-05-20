@@ -91,7 +91,7 @@ class StudentDataset(Dataset):
         # Replace padding token id with -100 so it's ignored in loss computation
         labels[labels == self.tokenizer.pad_token_id] = -100
 
-        teacher_logits = decompress_logits(item["compressed_logits"])
+        teacher_logits = decompress_logits(item["compressed_logits"]).squeeze(0)
 
         return {
             "input_ids": input_ids,

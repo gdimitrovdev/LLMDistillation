@@ -1,9 +1,9 @@
-codet5-small-pretrained-config = {
+codet5_small_pretrained_config = {
     # --- Data Args ---
-    "data_path_training": "Data/distillation_data_training.jsonl",
-    "data_path_validation": "Data/distillation_data_validation.jsonl",
+    "data_path_training": "data_generation/data/codet5/distillation_data_training.jsonl",
+    "data_path_validation": "data_generation/data/codet5/distillation_data_validation.jsonl",
     "output_dir": "./output_models/student_model_output_codet5_small_test",
-    "teacher_model_name": "Salesforce/codet5-small",
+    "teacher_model_name": "Salesforce/codet5-base",
     "model_name": "Salesforce/codet5-small",
     "model": None, # Used for custom models
     "max_src_length": 1024,
@@ -16,9 +16,9 @@ codet5-small-pretrained-config = {
 
     # --- Training Args ---
     "epochs": 5,
-    "batch_size": 8,
-    "eval_batch_size": 8,
-    "gradient_accumulation_steps": 1,
+    "batch_size": 4,
+    "eval_batch_size": 4,
+    "gradient_accumulation_steps": 2,
     "learning_rate": 5e-5,
     "weight_decay": 0.01,
     "warmup_steps": 0,

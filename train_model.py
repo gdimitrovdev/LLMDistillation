@@ -125,6 +125,8 @@ def train_student_model(model, tokenizer, train_dataloader, val_dataloader, args
                     
                     if student_logits.shape[1] != teacher_logits.shape[1]:
                         print("Student and teacher logits sizes do not match")
+                        print(teacher_logits.shape[1])
+                        print(student_logits.shape[1])
                         pass
                     
                     active_loss_mask = labels.view(-1) != -100 # Flattened mask
