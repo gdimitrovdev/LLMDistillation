@@ -2,7 +2,7 @@ codet5_small_pretrained_config = {
     # --- Data Args ---
     "data_path_training": "data_generation/data/codet5/distillation_data_training.jsonl",
     "data_path_validation": "data_generation/data/codet5/distillation_data_validation.jsonl",
-    "output_dir": "./output_models/student_model_output_codet5_small_test",
+    "output_dir": "./output_models/student_model_output_codet5_small_pretrained",
     "teacher_model_name": "Salesforce/codet5-base",
     "model_name": "Salesforce/codet5-small",
     "model": None, # Used for custom models

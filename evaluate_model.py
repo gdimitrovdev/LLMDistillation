@@ -2,6 +2,14 @@ import torch
 from tqdm import tqdm
 import re
 from difflib import SequenceMatcher
+import nltk
+
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt')
+
+from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 
 
 def calculate_similarity(reference, candidate):
@@ -97,6 +105,11 @@ def evaluate_model(model, tokenizer, dataloader, device):
     """Evaluate model on dataloader"""
     model.eval()
     eval_loss = 0.0
+
+    item_bleu_scores = []
+
+    chencherry = SmoothingFunction()
+
     all_metrics = {
         "exact_matches": 0,
         "generated_count": 0,
@@ -138,6 +151,22 @@ def evaluate_model(model, tokenizer, dataloader, device):
                 generated_text = tokenizer.decode(generated_ids[i], skip_special_tokens=True)
                 reference_text = batch["original_target"][i]
 
+                hypothesis_tokens = tokenizer.tokenize(generated_text.lower())
+                reference_tokens_list = [tokenizer.tokenize(reference_text.lower())]
+
+                try:
+                    bleu_score_item = sentence_bleu(
+                        references=reference_tokens_list,
+                        hypothesis=hypothesis_tokens,
+                        smoothing_function=chencherry.method4
+                    )
+                    item_bleu_scores.append(bleu_score_item)
+                except ZeroDivisionError:
+                    item_bleu_scores.append(0.0) # Empty hypothesis or no overlap
+                except Exception as e:
+                    print(f"Error calculating BLEU for an item: {e}")
+                    item_bleu_scores.append(0.0)
+
                 try:
                     metrics = evaluate_assertions(generated_text, reference_text)
 
@@ -153,6 +182,8 @@ def evaluate_model(model, tokenizer, dataloader, device):
 
     # Calculate overall metrics
     avg_loss = eval_loss / len(dataloader)
+
+    avg_bleu = sum(item_bleu_scores) / len(item_bleu_scores) if item_bleu_scores else 0.0
 
     if all_metrics["generated_count"] > 0 and all_metrics["reference_count"] > 0:
         overall_precision = all_metrics["exact_matches"] / all_metrics["generated_count"]
@@ -183,7 +214,8 @@ def evaluate_model(model, tokenizer, dataloader, device):
         "avg_per_sample_f1": avg_f1,
         "total_exact_matches": all_metrics["exact_matches"],
         "total_generated": all_metrics["generated_count"],
-        "total_reference": all_metrics["reference_count"]
+        "total_reference": all_metrics["reference_count"],
+        "avg_bleu_score": avg_bleu,
     }
 
     return avg_loss, eval_results
