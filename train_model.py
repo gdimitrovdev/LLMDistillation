@@ -406,6 +406,7 @@ def train_student_model(model, tokenizer, train_dataloader, val_dataloader, args
         print(f"  Accuracy: {eval_results['accuracy']:.4f}")
         print(f"  F1 score: {eval_results['f1']:.4f}")
         print(f"  BLEU score: {eval_results['avg_bleu_score']:.4f}")
+        print(f"  Parsability rate: {eval_results['parsability_rate']:.4f}")
 
         # Save best model
         if val_loss < best_val_loss:

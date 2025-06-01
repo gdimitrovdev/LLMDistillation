@@ -1,6 +1,7 @@
 from torch.utils.data import Dataset
 
 from data_generation.compress import decompress_logits
+from data_generation.train_codet5_assertions import clean_assertion_placeholders
 
 
 class StudentDataset(Dataset):
@@ -19,13 +20,16 @@ class StudentDataset(Dataset):
         item = self.data[idx]
 
         # Extract data fields
-        focal_file = item['focal_file']
+        focal_method = item['focal_method']
         test_method_masked = item['test_method_masked']
-        original_target = item['original_target']
+        original_target = '\n'.join(item['assertions'])
+
+        cleaned_focal_method = clean_assertion_placeholders(focal_method) if focal_method else ""
+        cleaned_test_method = clean_assertion_placeholders(test_method_masked)
 
         # First, tokenize just the test method to determine its token length
         test_method_tokens = self.tokenizer(
-            f"TEST METHOD:\n{test_method_masked}",
+            f"TEST METHOD:\n{cleaned_test_method}",
             add_special_tokens=True,
             truncation=True,  # Add truncation here
             max_length=self.max_src_length,  # Use max_src_length as the limit
@@ -42,13 +46,13 @@ class StudentDataset(Dataset):
             space_for_focal = self.max_src_length - test_method_length - 20  # Reserve tokens for prefix and special tokens
 
             # Format input text based on available space
-            if space_for_focal <= 0:
+            if space_for_focal <= 0 or not cleaned_focal_method:
                 # Not enough space - use only test method
-                input_text = f"TEST METHOD:\n{test_method_masked}"
+                input_text = f"TEST METHOD:\n{cleaned_test_method}"
             else:
                 # Tokenize focal file to check its length, with explicit truncation
                 focal_tokens = self.tokenizer(
-                    focal_file,
+                    cleaned_focal_method,
                     add_special_tokens=False,
                     truncation=True,  # Add truncation here
                     max_length=space_for_focal,  # Limit to available space
@@ -57,7 +61,7 @@ class StudentDataset(Dataset):
 
                 # Create combined input with truncated focal file if needed
                 truncated_focal = self.tokenizer.decode(focal_tokens.input_ids[0], skip_special_tokens=True)
-                input_text = f"FOCAL CODE:\n{truncated_focal}\n\nTEST METHOD:\n{test_method_masked}"
+                input_text = f"FOCAL METHOD:\n{truncated_focal}\n\nTEST METHOD:\n{cleaned_test_method}"
 
         # Apply strict truncation at the tokenizer level
         source_encoding = self.tokenizer(

@@ -3,6 +3,7 @@ from tqdm import tqdm
 import re
 from difflib import SequenceMatcher
 import nltk
+import javalang
 
 try:
     nltk.data.find('tokenizers/punkt')
@@ -10,6 +11,43 @@ except LookupError:
     nltk.download('punkt')
 
 from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
+
+
+def check_java_parsability(generated_assertion_block_str):
+    """
+    Checks if a block of generated assertion strings is parsable by javalang
+    by wrapping it in a minimal class and method structure.
+    This does NOT check for semantic correctness (e.g., undeclared variables)
+    or import resolution. It primarily checks statement-level syntax.
+    """
+    processed_assertion_code = []
+    for line in generated_assertion_block_str.strip().split('\n'):
+        line = line.strip()
+        if line:
+            processed_assertion_code.append(line)
+    
+    final_assertion_code_for_parsing = "\n            ".join(processed_assertion_code)
+    if not final_assertion_code_for_parsing.strip():
+        return True
+
+    # Create a minimal valid Java structure to wrap the assertions
+    code_to_parse = f"""
+    // No package declaration needed for javalang.parse.parse if it's just a snippet.
+    // No explicit imports are provided; javalang will treat unknown types as identifiers.
+    // It checks if 'identifier.method(...);' or 'method(...);' is syntactically valid.
+
+    class TemporaryParsingWrapperClass {{
+        public void temporaryTestMethod() {{
+            // Generated assertions go here
+            {final_assertion_code_for_parsing}
+        }}
+    }}
+    """
+    try:
+        javalang.parse.parse(code_to_parse)
+        return True
+    except javalang.parser.JavaSyntaxError:
+        return False
 
 
 def calculate_similarity(reference, candidate):
@@ -107,8 +145,10 @@ def evaluate_model(model, tokenizer, dataloader, device):
     eval_loss = 0.0
 
     item_bleu_scores = []
-
     chencherry = SmoothingFunction()
+
+    parsable_assertion_blocks = 0
+    total_assertion_blocks = 0
 
     all_metrics = {
         "exact_matches": 0,
@@ -150,6 +190,11 @@ def evaluate_model(model, tokenizer, dataloader, device):
             for i in range(len(input_ids)):
                 generated_text = tokenizer.decode(generated_ids[i], skip_special_tokens=True)
                 reference_text = batch["original_target"][i]
+
+                total_assertion_blocks += 1
+
+                if check_java_parsability(generated_text):
+                    parsable_assertion_blocks += 1
 
                 hypothesis_tokens = tokenizer.tokenize(generated_text.lower())
                 reference_tokens_list = [tokenizer.tokenize(reference_text.lower())]
@@ -216,6 +261,9 @@ def evaluate_model(model, tokenizer, dataloader, device):
         "total_generated": all_metrics["generated_count"],
         "total_reference": all_metrics["reference_count"],
         "avg_bleu_score": avg_bleu,
+        "total_assertion_blocks": total_assertion_blocks,
+        "parsable_assertion_blocks": parsable_assertion_blocks,
+        "parsability_rate": parsable_assertion_blocks / total_assertion_blocks,
     }
 
     return avg_loss, eval_results

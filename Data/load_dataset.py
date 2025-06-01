@@ -21,7 +21,7 @@ def load_dataset(jsonl_path, max_samples=None, teacher_model="codet5"):
                 try:
                     entry = json.loads(line)
                     # Validate required fields are present
-                    if 'focal_file' in entry and 'test_method_masked' in entry and 'original_target' in entry and 'model_type' in entry and entry['model_type'] == teacher_model:
+                    if 'focal_method' in entry and 'test_method_masked' in entry and 'assertions' in entry and 'model_type' in entry and entry['model_type'] == teacher_model:
                         data.append(entry)
                         valid_lines += 1
                         if max_samples and valid_lines >= max_samples:

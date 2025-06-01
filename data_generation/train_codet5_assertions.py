@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 Script to fine-tune CodeT5 models on Java test assertion generation and create distillation dataset.
-Ensures test methods are preserved and logits are properly captured.
+Updated to work with focal_method and test_method_masked format.
 """
 
 import argparse
@@ -20,16 +20,83 @@ from transformers import (
     get_linear_schedule_with_warmup
 )
 from torch.optim import AdamW
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset, DataLoader, Subset
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 import time
 from difflib import SequenceMatcher
-from compress import compress_logits
+
+from data_generation.compress import compress_logits
+
+
+def clean_assertion_placeholders(text):
+    """
+    Clean repetitive // <ASSERTION_PLACEHOLDER> comments, keeping only one
+    """
+    if not text:
+        return text
+
+    # Pattern to match // <ASSERTION_PLACEHOLDER> (with optional whitespace variations)
+    placeholder_pattern = r'//\s*<ASSERTION_PLACEHOLDER>\s*'
+
+    # Find all matches
+    matches = list(re.finditer(placeholder_pattern, text, re.IGNORECASE))
+
+    if len(matches) <= 1:
+        # No repetitive placeholders, return as is
+        return text
+
+    # Keep only the first occurrence, remove the rest
+    # We'll work backwards to avoid index shifting issues
+    cleaned_text = text
+    for match in reversed(matches[1:]):  # Skip the first match
+        start, end = match.span()
+        # Remove the placeholder and any trailing newline if present
+        if end < len(cleaned_text) and cleaned_text[end] == '\n':
+            end += 1
+        cleaned_text = cleaned_text[:start] + cleaned_text[end:]
+
+    return cleaned_text
+
+
+def validate_datapoint_length(focal_method, test_method_masked, tokenizer, max_src_length=1024):
+    """
+    Check if a datapoint will fit within the context window
+    Returns True if valid, False if too long
+    """
+    try:
+        # Clean assertion placeholders first
+        cleaned_test_method = clean_assertion_placeholders(test_method_masked)
+        cleaned_focal_method = clean_assertion_placeholders(focal_method) if focal_method else ""
+
+        # Create the input text as it would be formatted
+        if cleaned_focal_method:
+            input_text = f"FOCAL METHOD:\n{cleaned_focal_method}\n\nTEST METHOD:\n{cleaned_test_method}"
+        else:
+            input_text = f"TEST METHOD:\n{cleaned_test_method}"
+
+        # Tokenize to check length
+        tokens = tokenizer(
+            input_text,
+            add_special_tokens=True,
+            truncation=False,  # Don't truncate, we want to check actual length
+            return_tensors="pt"
+        )
+
+        actual_length = tokens.input_ids.size(1)
+
+        # Add some buffer for safety (reserve tokens for generation, special tokens, etc.)
+        safety_buffer = 50
+
+        return actual_length <= (max_src_length - safety_buffer)
+
+    except Exception as e:
+        print(f"Error validating datapoint length: {e}")
+        return False
 
 
 class AssertionDataset(Dataset):
-    """Dataset for assertion generation that prioritizes preserving test methods"""
+    """Dataset for assertion generation using focal method and test method"""
 
     def __init__(self, data, tokenizer, max_src_length=1024, max_tgt_length=512):
         self.data = data
@@ -43,17 +110,21 @@ class AssertionDataset(Dataset):
     def __getitem__(self, idx):
         item = self.data[idx]
 
-        # Extract data fields
-        focal_file = item['focal_file']
+        # Extract data fields - updated for new format
+        focal_method = item['focal_method']
         test_method_masked = item['test_method_masked']
         assertions = item['assertions']
 
+        # Clean assertion placeholders
+        cleaned_test_method = clean_assertion_placeholders(test_method_masked)
+        cleaned_focal_method = clean_assertion_placeholders(focal_method) if focal_method else ""
+
         # First, tokenize just the test method to determine its token length
         test_method_tokens = self.tokenizer(
-            f"TEST METHOD:\n{test_method_masked}",
+            f"TEST METHOD:\n{cleaned_test_method}",
             add_special_tokens=True,
-            truncation=True,  # Add truncation here
-            max_length=self.max_src_length,  # Use max_src_length as the limit
+            truncation=True,
+            max_length=self.max_src_length,
             return_tensors="pt"
         )
         test_method_length = test_method_tokens.input_ids.size(1)
@@ -63,26 +134,26 @@ class AssertionDataset(Dataset):
             # Just keep the test method, already truncated
             input_text = f"TEST METHOD:\n{self.tokenizer.decode(test_method_tokens.input_ids[0], skip_special_tokens=True)}"
         else:
-            # Determine how much space we have left for the focal file
+            # Determine how much space we have left for the focal method
             space_for_focal = self.max_src_length - test_method_length - 20  # Reserve tokens for prefix and special tokens
 
             # Format input text based on available space
-            if space_for_focal <= 0:
-                # Not enough space - use only test method
-                input_text = f"TEST METHOD:\n{test_method_masked}"
+            if space_for_focal <= 0 or not cleaned_focal_method:
+                # Not enough space or no focal method - use only test method
+                input_text = f"TEST METHOD:\n{cleaned_test_method}"
             else:
-                # Tokenize focal file to check its length, with explicit truncation
+                # Tokenize focal method to check its length, with explicit truncation
                 focal_tokens = self.tokenizer(
-                    focal_file,
+                    cleaned_focal_method,
                     add_special_tokens=False,
-                    truncation=True,  # Add truncation here
-                    max_length=space_for_focal,  # Limit to available space
+                    truncation=True,
+                    max_length=space_for_focal,
                     return_tensors="pt"
                 )
 
-                # Create combined input with truncated focal file if needed
+                # Create combined input with truncated focal method if needed
                 truncated_focal = self.tokenizer.decode(focal_tokens.input_ids[0], skip_special_tokens=True)
-                input_text = f"FOCAL CODE:\n{truncated_focal}\n\nTEST METHOD:\n{test_method_masked}"
+                input_text = f"FOCAL METHOD:\n{truncated_focal}\n\nTEST METHOD:\n{cleaned_test_method}"
 
         # Target text
         target_text = "\n".join(assertions) if isinstance(assertions, list) else assertions
@@ -128,33 +199,81 @@ class AssertionDataset(Dataset):
         }
 
 
-def load_dataset(jsonl_path, max_samples=None):
-    """Load data from JSONL file with optional sample limit"""
+def load_dataset(jsonl_path, tokenizer, max_samples=None, max_src_length=1024):
+    """Load data from JSONL file with filtering and optional sample limit - updated for new format"""
     data = []
     total_lines = 0
     valid_lines = 0
+    filtered_by_length = 0
+    filtered_by_missing_fields = 0
+    filtered_by_invalid_json = 0
 
     # First count lines
     with open(jsonl_path, 'r') as f:
         for _ in f:
             total_lines += 1
 
-    # Then load with progress bar
+    print(f"Processing {total_lines} lines from {jsonl_path}")
+
+    # Then load with progress bar and filtering
     with open(jsonl_path, 'r') as f:
-        for line in tqdm(f, total=total_lines, desc="Loading dataset"):
+        for line_num, line in enumerate(tqdm(f, total=total_lines, desc="Loading and filtering dataset")):
             if line.strip():
                 try:
                     entry = json.loads(line)
-                    # Validate required fields are present
-                    if 'focal_file' in entry and 'test_method_masked' in entry and 'assertions' in entry:
-                        data.append(entry)
-                        valid_lines += 1
-                        if max_samples and valid_lines >= max_samples:
-                            break
-                    else:
-                        print("Warning: Skipping entry with missing fields")
+
+                    # Check required fields are present - updated for new format
+                    required_fields = ['focal_method', 'test_method_masked', 'assertions']
+                    if not all(field in entry for field in required_fields):
+                        filtered_by_missing_fields += 1
+                        continue
+
+                    # Check if assertions is not empty
+                    if not entry['assertions'] or (
+                            isinstance(entry['assertions'], list) and len(entry['assertions']) == 0):
+                        filtered_by_missing_fields += 1
+                        continue
+
+                    # Validate datapoint length - updated for new format
+                    if not validate_datapoint_length(
+                            entry['focal_method'],
+                            entry['test_method_masked'],
+                            tokenizer,
+                            max_src_length
+                    ):
+                        filtered_by_length += 1
+                        continue
+
+                    # If we reach here, the datapoint is valid
+                    data.append(entry)
+                    valid_lines += 1
+
+                    # Check if we've reached the max_samples limit for VALID datapoints
+                    if max_samples and valid_lines >= max_samples:
+                        print(f"Reached max_samples limit of {max_samples} valid datapoints")
+                        break
+
                 except json.JSONDecodeError:
-                    print("Warning: Skipping invalid JSON line")
+                    filtered_by_invalid_json += 1
+                    continue
+
+    # Print filtering statistics
+    final_message = f"\nDataset loading statistics:"
+    if max_samples:
+        final_message += f" (limited to {max_samples} samples)"
+    else:
+        final_message += f" (loaded all valid data)"
+    print(final_message)
+    print(f"  Total lines processed: {total_lines}")
+    print(f"  Valid datapoints: {valid_lines}")
+    print(f"  Filtered by missing fields: {filtered_by_missing_fields}")
+    print(f"  Filtered by length (too long): {filtered_by_length}")
+    print(f"  Filtered by invalid JSON: {filtered_by_invalid_json}")
+    print(f"  Total filtered out: {filtered_by_missing_fields + filtered_by_length + filtered_by_invalid_json}")
+    print(f"  Success rate: {valid_lines / total_lines * 100:.1f}%")
+
+    if valid_lines == 0:
+        raise ValueError("No valid datapoints found! Check your dataset format and context length settings.")
 
     return data
 
@@ -246,8 +365,43 @@ def evaluate_assertions(generated_assertions, reference_assertions):
         "similarity_scores": similarity_scores
     }
 
+
+def create_limited_dataloader(original_dataloader, max_samples, dataset_type=""):
+    """Create a limited dataloader for distillation dataset creation"""
+    if max_samples is None:
+        return original_dataloader
+
+    # Calculate how many batches we need to get max_samples
+    batch_size = original_dataloader.batch_size
+    max_batches = (max_samples + batch_size - 1) // batch_size  # Ceiling division
+
+    print(f"Limiting {dataset_type} distillation to {max_samples} samples ({max_batches} batches)")
+
+    # Create a limited dataset by taking a subset
+    original_dataset = original_dataloader.dataset
+    if len(original_dataset) <= max_samples:
+        return original_dataloader
+
+    # Create indices for the subset
+    indices = list(range(min(max_samples, len(original_dataset))))
+
+    # Create subset dataset
+    subset_dataset = Subset(original_dataset, indices)
+
+    # Create new dataloader with the subset
+    limited_dataloader = DataLoader(
+        subset_dataset,
+        batch_size=original_dataloader.batch_size,
+        shuffle=False,  # Don't shuffle for distillation
+        num_workers=original_dataloader.num_workers,
+        pin_memory=original_dataloader.pin_memory
+    )
+
+    return limited_dataloader
+
+
 def create_distillation_dataset(model, tokenizer, dataloader, device, args, output_path, dataset_type=""):
-    """Create a distillation dataset with predictions and logits"""
+    """Create a distillation dataset with predictions, logits, and performance metrics"""
     model.eval()
     distillation_data = []
 
@@ -263,12 +417,20 @@ def create_distillation_dataset(model, tokenizer, dataloader, device, args, outp
         'sparsity_ratios': []
     }
 
+    # Performance metrics tracking
+    performance_metrics = {
+        'exact_matches_total': 0,
+        'generated_count_total': 0,
+        'reference_count_total': 0,
+        'similarity_scores_all': [],
+        'accuracy_scores_all': [],
+        'f1_scores_all': [],
+        'precision_scores_all': [],
+        'recall_scores_all': []
+    }
+
     # Set up mixed precision if requested
     use_fp16 = args.fp16
-
-    # Import the needed context manager
-    from contextlib import nullcontext
-    import time
 
     # Helper function to convert numpy types to Python native types
     def convert_numpy_to_python(obj):
@@ -317,6 +479,19 @@ def create_distillation_dataset(model, tokenizer, dataloader, device, args, outp
 
                     generated_text = tokenizer.decode(generated_ids[0], skip_special_tokens=True)
 
+                    # Calculate performance metrics for this example
+                    eval_metrics = evaluate_assertions(generated_text, original_target)
+
+                    # Update overall performance metrics
+                    performance_metrics['exact_matches_total'] += eval_metrics['exact_matches']
+                    performance_metrics['generated_count_total'] += eval_metrics['generated_count']
+                    performance_metrics['reference_count_total'] += eval_metrics['reference_count']
+                    performance_metrics['similarity_scores_all'].extend(eval_metrics['similarity_scores'])
+                    performance_metrics['accuracy_scores_all'].append(eval_metrics['accuracy'])
+                    performance_metrics['f1_scores_all'].append(eval_metrics['f1'])
+                    performance_metrics['precision_scores_all'].append(eval_metrics['precision'])
+                    performance_metrics['recall_scores_all'].append(eval_metrics['recall'])
+
                     # Extract logits with the same mixed precision setting
                     logits = extract_logits_from_codet5(
                         model, tokenizer,
@@ -336,7 +511,7 @@ def create_distillation_dataset(model, tokenizer, dataloader, device, args, outp
 
                         # Update compression statistics
                         if compressed_logits:
-                            format_type = compressed_logits.get('format', 'lz4')  # Default to 'lz4' instead of 'dense'
+                            format_type = compressed_logits.get('format', 'lz4')
                             # Initialize the format count if we haven't seen this format before
                             if format_type not in compression_stats['format_counts']:
                                 compression_stats['format_counts'][format_type] = 0
@@ -365,31 +540,48 @@ def create_distillation_dataset(model, tokenizer, dataloader, device, args, outp
                     else:
                         failure_count += 1
 
-                    # Parse input to extract components
-                    focal_file = ""
+                    # Parse input to extract components - updated for new format
+                    focal_method = ""
                     test_method_masked = ""
 
                     if isinstance(original_input, str):
-                        if "FOCAL CODE:" in original_input and "TEST METHOD:" in original_input:
-                            parts = original_input.split("FOCAL CODE:")
+                        if "FOCAL METHOD:" in original_input and "TEST METHOD:" in original_input:
+                            parts = original_input.split("FOCAL METHOD:")
                             if len(parts) > 1:
-                                focal_code_parts = parts[1].split("TEST METHOD:")
-                                if len(focal_code_parts) > 1:
-                                    focal_file = focal_code_parts[0].strip()
-                                    test_method_masked = focal_code_parts[1].strip()
+                                focal_method_parts = parts[1].split("TEST METHOD:")
+                                if len(focal_method_parts) > 1:
+                                    focal_method = focal_method_parts[0].strip()
+                                    test_method_masked = focal_method_parts[1].strip()
                         elif "TEST METHOD:" in original_input:
                             parts = original_input.split("TEST METHOD:")
                             if len(parts) > 1:
                                 test_method_masked = parts[1].strip()
 
-                    # Create distillation item
+                    # Create distillation item with original entry data + predictions + logits + metrics
                     item = {
-                        "focal_file": focal_file,
+                        # Original entry fields
+                        "focal_method": focal_method,
                         "test_method_masked": test_method_masked,
-                        "original_target": original_target,
-                        "predicted_assertions": generated_text,
+                        "assertions": original_target.split('\n') if '\n' in original_target else [original_target],
+
+                        # Model predictions and logits
+                        "predicted_assertions": generated_text.split('\n') if '\n' in generated_text else [
+                            generated_text],
+                        "compressed_logits": compressed_logits,
                         "model_type": args.model_type,
-                        "compressed_logits": compressed_logits
+
+                        # Performance metrics for this example
+                        "performance_metrics": {
+                            "exact_matches": eval_metrics['exact_matches'],
+                            "generated_count": eval_metrics['generated_count'],
+                            "reference_count": eval_metrics['reference_count'],
+                            "precision": eval_metrics['precision'],
+                            "recall": eval_metrics['recall'],
+                            "f1": eval_metrics['f1'],
+                            "accuracy": eval_metrics['accuracy'],
+                            "similarity_score_avg": eval_metrics['similarity_score_avg'],
+                            "similarity_scores": eval_metrics['similarity_scores']
+                        }
                     }
 
                     # Add to results
@@ -403,19 +595,35 @@ def create_distillation_dataset(model, tokenizer, dataloader, device, args, outp
                         print(f"Original: {original_target[:100]}..." if len(
                             original_target) > 100 else f"Original: {original_target}")
                         print(f"Has logits: {compressed_logits is not None}")
+                        print(
+                            f"Performance - F1: {eval_metrics['f1']:.3f}, Similarity: {eval_metrics['similarity_score_avg']:.3f}")
                         if compressed_logits:
                             format_type = compressed_logits.get('format', 'lz4')
                             bits = compressed_logits.get('bits', 32)
                             comp_info = compressed_logits.get('compression', {})
                             ratio = comp_info.get('compression_ratio', 1.0)
                             print(f"Logits format: {format_type}, {bits}-bit, compression ratio: {ratio:.2f}x")
-                            print(
-                                f"Original size: {comp_info.get('original_size_bytes', 0) / 1024:.2f} KB, Compressed: {comp_info.get('final_size_bytes', 0) / 1024:.2f} KB")
 
                 except Exception as e:
                     print(f"Error processing item {batch_idx}-{i}: {e}")
                     import traceback
                     traceback.print_exc()
+
+    # Calculate overall performance statistics
+    total_examples = len(distillation_data)
+    overall_precision = performance_metrics['exact_matches_total'] / performance_metrics['generated_count_total'] if \
+    performance_metrics['generated_count_total'] else 0
+    overall_recall = performance_metrics['exact_matches_total'] / performance_metrics['reference_count_total'] if \
+    performance_metrics['reference_count_total'] else 0
+    overall_f1 = 2 * overall_precision * overall_recall / (overall_precision + overall_recall) if (
+                                                                                                              overall_precision + overall_recall) > 0 else 0
+
+    avg_similarity = sum(performance_metrics['similarity_scores_all']) / len(
+        performance_metrics['similarity_scores_all']) if performance_metrics['similarity_scores_all'] else 0
+    avg_accuracy = sum(performance_metrics['accuracy_scores_all']) / len(performance_metrics['accuracy_scores_all']) if \
+    performance_metrics['accuracy_scores_all'] else 0
+    avg_f1 = sum(performance_metrics['f1_scores_all']) / len(performance_metrics['f1_scores_all']) if \
+    performance_metrics['f1_scores_all'] else 0
 
     # Calculate overall statistics
     avg_compression_ratio = 0
@@ -449,8 +657,16 @@ def create_distillation_dataset(model, tokenizer, dataloader, device, args, outp
         f"  Overall compression ratio: {compression_stats['original_size_total'] / (compression_stats['compressed_size_total'] or 1):.2f}x")
     print(f"  Average compression ratio: {avg_compression_ratio:.2f}x")
 
-    # Add compression stats to the file header
-    # Remove sparsity-related stats from the file_stats dictionary
+    # Print performance statistics
+    print(f"\nPerformance Statistics:")
+    print(f"  Overall Precision: {overall_precision:.4f}")
+    print(f"  Overall Recall: {overall_recall:.4f}")
+    print(f"  Overall F1: {overall_f1:.4f}")
+    print(f"  Average Similarity: {avg_similarity:.4f}")
+    print(f"  Average Accuracy: {avg_accuracy:.4f}")
+    print(f"  Average F1 (per-example): {avg_f1:.4f}")
+
+    # Add compression stats and performance metrics to the file header
     file_stats = {
         'dataset_type': dataset_type,
         'item_count': total_items,
@@ -462,6 +678,15 @@ def create_distillation_dataset(model, tokenizer, dataloader, device, args, outp
                     compression_stats['compressed_size_total'] or 1),
             'avg_compression_ratio': avg_compression_ratio,
             'format_counts': compression_stats['format_counts']
+        },
+        'performance': {
+            'overall_precision': overall_precision,
+            'overall_recall': overall_recall,
+            'overall_f1': overall_f1,
+            'avg_similarity': avg_similarity,
+            'avg_accuracy': avg_accuracy,
+            'avg_f1_per_example': avg_f1,
+            'total_examples': total_examples
         },
         'created_at': time.strftime("%Y-%m-%d %H:%M:%S"),
         'args': {
@@ -771,23 +996,33 @@ def train_model(model, tokenizer, train_dataloader, val_dataloader, args):
             print(f"Early stopping after {epochs_without_improvement} epochs without improvement")
             break
 
-        # Save final model
-        final_model_dir = os.path.join(args.output_dir, "final_model")
-        os.makedirs(final_model_dir, exist_ok=True)
-        model.save_pretrained(final_model_dir)
-        tokenizer.save_pretrained(final_model_dir)
+    # Save final model
+    final_model_dir = os.path.join(args.output_dir, "final_model")
+    os.makedirs(final_model_dir, exist_ok=True)
+    model.save_pretrained(final_model_dir)
+    tokenizer.save_pretrained(final_model_dir)
 
     # Create distillation datasets if requested
     if args.create_distillation_dataset:
+        # Create limited dataloaders for distillation if max_distill_samples is specified
+        val_distill_dataloader = create_limited_dataloader(
+            val_dataloader, args.max_distill_samples, "validation"
+        )
+        train_distill_dataloader = create_limited_dataloader(
+            train_dataloader, args.max_distill_samples, "training"
+        )
+
         # Create distillation dataset for validation data
         val_distillation_path = os.path.join(args.output_dir, "distillation_data_validation.jsonl")
         print(f"Creating validation distillation dataset at {val_distillation_path}...")
-        create_distillation_dataset(model, tokenizer, val_dataloader, device, args, val_distillation_path, "validation")
+        create_distillation_dataset(model, tokenizer, val_distill_dataloader, device, args, val_distillation_path,
+                                    "validation")
 
         # Create distillation dataset for training data
         train_distillation_path = os.path.join(args.output_dir, "distillation_data_training.jsonl")
         print(f"Creating training distillation dataset at {train_distillation_path}...")
-        create_distillation_dataset(model, tokenizer, train_dataloader, device, args, train_distillation_path, "training")
+        create_distillation_dataset(model, tokenizer, train_distill_dataloader, device, args, train_distillation_path,
+                                    "training")
 
     # Plot loss curves
     plt.figure(figsize=(10, 6))
@@ -892,7 +1127,7 @@ def evaluate_model(model, tokenizer, dataloader, device, args):
     overall_recall = all_metrics["exact_matches"] / all_metrics["reference_count"] if all_metrics[
         "reference_count"] else 0
     overall_f1 = 2 * overall_precision * overall_recall / (overall_precision + overall_recall) if (
-                                                                                                              overall_precision + overall_recall) > 0 else 0
+                                                                                                          overall_precision + overall_recall) > 0 else 0
 
     # Average per-sample metrics
     avg_similarity = sum(all_metrics["similarity_scores"]) / len(all_metrics["similarity_scores"])
@@ -963,6 +1198,7 @@ def extract_logits_from_codet5(model, tokenizer, input_ids, attention_mask, targ
         traceback.print_exc()
         return None
 
+
 def main():
     parser = argparse.ArgumentParser(description="Fine-tune CodeT5 for assertion generation")
 
@@ -994,7 +1230,12 @@ def main():
                         help="Save checkpoint steps (0 to save only best model)")
     parser.add_argument("--early_stopping_patience", type=int, default=3, help="Early stopping patience (0 to disable)")
     parser.add_argument("--num_workers", type=int, default=4, help="DataLoader workers")
-    parser.add_argument("--max_samples", type=int, default=None, help="Maximum samples to use (None = use all)")
+
+    # Sample control args
+    parser.add_argument("--max_train_samples", type=int, default=None,
+                        help="Maximum samples for training (None = use all valid data)")
+    parser.add_argument("--max_distill_samples", type=int, default=None,
+                        help="Maximum samples for distillation dataset creation (None = use all training data)")
 
     # Distillation dataset args
     parser.add_argument("--create_distillation_dataset", action="store_true",
@@ -1009,22 +1250,31 @@ def main():
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args.seed)
 
-    # Load dataset
+    # Load tokenizer first (needed for dataset filtering)
+    print(f"Loading tokenizer: {args.model_name}")
+    if args.model_type == "codet5":
+        tokenizer = RobertaTokenizer.from_pretrained(args.model_name)
+    else:  # codet5p
+        tokenizer = AutoTokenizer.from_pretrained(args.model_name)
+
+    # Load dataset with filtering
     print(f"Loading dataset from {args.data_path}...")
-    data = load_dataset(args.data_path, args.max_samples)
-    print(f"Loaded {len(data)} examples")
+    data = load_dataset(args.data_path, tokenizer, args.max_train_samples, args.max_src_length)
+
+    if args.max_train_samples:
+        print(f"Using {len(data)} samples for training (limited by max_train_samples)")
+    else:
+        print(f"Using all {len(data)} valid examples for training")
 
     # Split into train and validation sets
     train_data, val_data = train_test_split(data, test_size=args.validation_split, random_state=args.seed)
     print(f"Training on {len(train_data)} examples, validating on {len(val_data)} examples")
 
-    # Load tokenizer and model
+    # Load model
     print(f"Loading model: {args.model_name}")
     if args.model_type == "codet5":
-        tokenizer = RobertaTokenizer.from_pretrained(args.model_name)
         model = T5ForConditionalGeneration.from_pretrained(args.model_name)
     else:  # codet5p
-        tokenizer = AutoTokenizer.from_pretrained(args.model_name)
         model = T5ForConditionalGeneration.from_pretrained(args.model_name)
 
     # Create datasets

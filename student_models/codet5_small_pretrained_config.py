@@ -2,7 +2,7 @@ codet5_small_pretrained_config = {
     # --- Data Args ---
     "data_path_training": "data_generation/data/codet5/distillation_data_training.jsonl",
     "data_path_validation": "data_generation/data/codet5/distillation_data_validation.jsonl",
-    "output_dir": "./output_models/student_model_output_codet5_small_pretrained",
+    "output_dir": "./output_models/student_model_output_codet5_small_pretrained_testing",
     "teacher_model_name": "Salesforce/codet5-base",
     "model_name": "Salesforce/codet5-small",
     "model": None, # Used for custom models
@@ -42,6 +42,6 @@ codet5_small_pretrained_config = {
     "save_total_limit": 2,
     "early_stopping_patience": 3,
     "num_workers": 2,           
-    "max_samples_training": 900,
-    "max_samples_validation": 100,
+    "max_samples_training": 9,
+    "max_samples_validation": 1,
 }
