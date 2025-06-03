@@ -88,6 +88,9 @@ def train_student_model(model, tokenizer, train_dataloader, val_dataloader, args
     with open(metrics_file, "w") as f:
         f.write("epoch,batch,global_step,loss,accuracy,similarity,lr,examples_per_second\n")
 
+    # Create results file
+    epochs_results_file = os.path.join(args["output_dir"], "epochs_evaluation_results.jsonl")
+
     # Main training loop
     print(f"Starting training for {num_epochs} epochs...")
     train_losses = []
@@ -407,6 +410,17 @@ def train_student_model(model, tokenizer, train_dataloader, val_dataloader, args
         print(f"  F1 score: {eval_results['f1']:.4f}")
         print(f"  BLEU score: {eval_results['avg_bleu_score']:.4f}")
         print(f"  Parsability rate: {eval_results['parsability_rate']:.4f}")
+
+        # Write results to result file
+        epoch_summary = {
+            "epoch": epoch + 1,
+            "global_step": global_step,
+            "training_loss_avg": epoch_avg_loss,
+            "validation_loss": val_loss,
+            **eval_results
+        }
+        with open(epochs_results_file, "a", encoding="utf-8") as erf:
+            erf.write(json.dumps(epoch_summary) + "\n")
 
         # Save best model
         if val_loss < best_val_loss:
