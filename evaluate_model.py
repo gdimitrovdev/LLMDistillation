@@ -48,6 +48,10 @@ def check_java_parsability(generated_assertion_block_str):
         return True
     except javalang.parser.JavaSyntaxError:
         return False
+    except Exception as e:
+        print(e)
+        print(final_assertion_code_for_parsing)
+        return False
 
 
 def calculate_similarity(reference, candidate):
