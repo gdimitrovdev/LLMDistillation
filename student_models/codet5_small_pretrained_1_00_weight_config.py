@@ -19,9 +19,9 @@ def codet5_small_pretrained_1_00_weight_config(base_path):
 
         # --- Training Args ---
         "epochs": 20,
-        "batch_size": 16,
-        "eval_batch_size": 16,
-        "gradient_accumulation_steps": 1,
+        "batch_size": 4,
+        "eval_batch_size": 4,
+        "gradient_accumulation_steps": 2,
         "learning_rate": 5e-5,
         "weight_decay": 0.01,
         "warmup_steps": 0,
@@ -45,6 +45,6 @@ def codet5_small_pretrained_1_00_weight_config(base_path):
         "save_total_limit": 2,
         "early_stopping_patience": 5,
         "num_workers": 2,           
-        "max_samples_training": 900,
-        "max_samples_validation": 100,
+        "max_samples_training": 9000,
+        "max_samples_validation": 1000,
     }
