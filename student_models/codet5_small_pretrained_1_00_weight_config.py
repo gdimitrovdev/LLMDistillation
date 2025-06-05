@@ -1,47 +1,50 @@
-codet5_small_pretrained_1_00_weight_config = {
-    # --- Data Args ---
-    "data_path_training": "data_generation/data/codet5/distillation_data_training.jsonl",
-    "data_path_validation": "data_generation/data/codet5/distillation_data_validation.jsonl",
-    "output_dir": "./output_models/student_model_output_codet5_small_pretrained_1_00_weight",
-    "teacher_model_name": "Salesforce/codet5-base",
-    "model_name": "Salesforce/codet5-small",
-    "model": None, # Used for custom models
-    "max_src_length": 1024,
-    "max_tgt_length": 512,
+import os
 
-    # --- Distillation Args ---
-    "distillation_temp": 2.0,
-    "alpha_ce": 0.0,            # Weight for student's own Cross-Entropy loss
-    "alpha_distil": 1.0,        # Weight for distillation loss (e.g., KL divergence)
+def codet5_small_pretrained_1_00_weight_config(base_path):
+    return {
+        # --- Data Args ---
+        "data_path_training": os.path.join(base_path, "data_generation/data/codet5/distillation_data_training.jsonl"),
+        "data_path_validation": os.path.join(base_path, "data_generation/data/codet5/distillation_data_validation.jsonl"),
+        "output_dir": os.path.join(base_path, "output_models/student_model_output_codet5_small_pretrained_1_00_weight"),
+        "teacher_model_name": "Salesforce/codet5-base",
+        "model_name": "Salesforce/codet5-small",
+        "model": None, # Used for custom models
+        "max_src_length": 1024,
+        "max_tgt_length": 512,
 
-    # --- Training Args ---
-    "epochs": 20,
-    "batch_size": 16,
-    "eval_batch_size": 16,
-    "gradient_accumulation_steps": 1,
-    "learning_rate": 5e-5,
-    "weight_decay": 0.01,
-    "warmup_steps": 0,
-    "max_grad_norm": 1.0,
-    "max_steps": -1,
-    "fp16": True,
-    "seed": 42,
+        # --- Distillation Args ---
+        "distillation_temp": 2.0,
+        "alpha_ce": 0.0,            # Weight for student's own Cross-Entropy loss
+        "alpha_distil": 1.0,        # Weight for distillation loss (e.g., KL divergence)
 
-    # --- Batch Metrics Args (Optional, can simplify by removing) ---
-    "track_batch_metrics": False,
-    "batch_metrics_every": 50,
-    "batch_metrics_window": 50,
-    "batch_eval_pool": 4,
+        # --- Training Args ---
+        "epochs": 20,
+        "batch_size": 16,
+        "eval_batch_size": 16,
+        "gradient_accumulation_steps": 1,
+        "learning_rate": 5e-5,
+        "weight_decay": 0.01,
+        "warmup_steps": 0,
+        "max_grad_norm": 1.0,
+        "max_steps": -1,
+        "fp16": True,
+        "seed": 42,
 
-    # --- Logging and Saving Args ---
-    "logging_steps": 100,
-    "eval_strategy": "epoch",
-    "eval_steps": 0,
-    "save_strategy": "epoch",
-    "save_steps": 0,
-    "save_total_limit": 2,
-    "early_stopping_patience": 5,
-    "num_workers": 2,           
-    "max_samples_training": 9000,
-    "max_samples_validation": 1000,
-}
+        # --- Batch Metrics Args (Optional, can simplify by removing) ---
+        "track_batch_metrics": False,
+        "batch_metrics_every": 50,
+        "batch_metrics_window": 50,
+        "batch_eval_pool": 4,
+
+        # --- Logging and Saving Args ---
+        "logging_steps": 100,
+        "eval_strategy": "epoch",
+        "eval_steps": 0,
+        "save_strategy": "epoch",
+        "save_steps": 0,
+        "save_total_limit": 2,
+        "early_stopping_patience": 5,
+        "num_workers": 2,           
+        "max_samples_training": 9000,
+        "max_samples_validation": 1000,
+    }
