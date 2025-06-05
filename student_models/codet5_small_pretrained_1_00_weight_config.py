@@ -45,6 +45,6 @@ def codet5_small_pretrained_1_00_weight_config(base_path):
         "save_total_limit": 2,
         "early_stopping_patience": 5,
         "num_workers": 2,           
-        "max_samples_training": 9000,
-        "max_samples_validation": 1000,
+        "max_samples_training": 900,
+        "max_samples_validation": 100,
     }
