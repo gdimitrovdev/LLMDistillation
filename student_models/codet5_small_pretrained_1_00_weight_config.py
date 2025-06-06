@@ -14,11 +14,11 @@ def codet5_small_pretrained_1_00_weight_config(base_path):
 
         # --- Distillation Args ---
         "distillation_temp": 2.0,
-        "alpha_ce": 0.0,            # Weight for student's own Cross-Entropy loss
-        "alpha_distil": 1.0,        # Weight for distillation loss (e.g., KL divergence)
+        "alpha_ce": 0.5,            # Weight for student's own Cross-Entropy loss
+        "alpha_distil": 0.5,        # Weight for distillation loss (e.g., KL divergence)
 
         # --- Training Args ---
-        "epochs": 20,
+        "epochs": 10,
         "batch_size": 4,
         "eval_batch_size": 4,
         "gradient_accumulation_steps": 2,
@@ -45,6 +45,6 @@ def codet5_small_pretrained_1_00_weight_config(base_path):
         "save_total_limit": 2,
         "early_stopping_patience": 5,
         "num_workers": 2,           
-        "max_samples_training": 900,
-        "max_samples_validation": 100,
+        "max_samples_training": 4500,
+        "max_samples_validation": 500,
     }

@@ -15,7 +15,7 @@ import numpy as np
 
 from data.student_dataset import StudentDataset
 from data.load_dataset import load_dataset
-from evaluate_model import evaluate_model, evaluate_assertions
+from evaluation.evaluate_model import evaluate_model, evaluate_assertions
 
 
 def train_student_model(model, tokenizer, train_dataloader, val_dataloader, args):
