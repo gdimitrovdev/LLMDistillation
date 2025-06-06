@@ -1,6 +1,8 @@
 import re
 from difflib import SequenceMatcher
 import javalang
+from codebleu import calc_codebleu
+from transformers import RobertaTokenizer
 
 
 def check_java_parsability(generated_assertion_block_str):
@@ -131,3 +133,50 @@ def evaluate_assertions(generated_assertions, reference_assertions):
         "similarity_score_avg": sum(similarity_scores) / len(similarity_scores) if similarity_scores else 0,
         "similarity_scores": similarity_scores
     }
+
+
+def evaluate_assertions_with_codebleu_codet5_tokenizer(
+    ground_truth_assertions,
+    generated_assertions,
+    tokenizer,
+):
+    """
+    Calculates CodeBLEU scores for a list of ground truth and generated Java assertions,
+    using RobertaTokenizer from CodeT5 for the n-gram components.
+
+    Args:
+        ground_truth_assertions (list[str]): A list of reference assertion strings.
+        generated_assertions (list[str]): A list of generated assertion strings.
+        tokenizer (obj): The CodeT5 tokenizer.
+
+    Returns:
+        dict: A dictionary containing overall CodeBLEU score and scores for
+              its components (ngram_match, weighted_ngram_match, syntax_match, dataflow_match).
+    """
+
+    if len(ground_truth_assertions) != len(generated_assertions):
+        print("Number of assertions should be the same")
+        return {
+            "codebleu": 0.0,
+            "ngram_match_score": 0.0,
+            "weighted_ngram_match_score": 0.0,
+            "syntax_match_score": 0.0,
+            "dataflow_match_score": 0.0,
+        }
+
+    def custom_code_tokenizer(code_string):
+        token_ids = tokenizer.encode(code_string, add_special_tokens=False)
+        tokens = [tokenizer.decode(token_id) for token_id in token_ids]
+        return tokens
+    
+    references_formatted = [[ref] for ref in ground_truth_assertions]
+
+    results = calc_codebleu(
+        references=references_formatted,
+        predictions=generated_assertions,
+        lang="java",
+        weights=(0.25, 0.25, 0.25, 0.25),
+        tokenizer=custom_code_tokenizer,
+    )
+
+    return results

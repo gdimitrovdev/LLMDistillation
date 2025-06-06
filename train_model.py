@@ -408,7 +408,11 @@ def train_student_model(model, tokenizer, train_dataloader, val_dataloader, args
         print(f"  Similarity score: {eval_results['similarity_score_avg']:.4f}")
         print(f"  Accuracy: {eval_results['accuracy']:.4f}")
         print(f"  F1 score: {eval_results['f1']:.4f}")
-        print(f"  BLEU score: {eval_results['avg_bleu_score']:.4f}")
+        print(f"  CodeBLEU score: {eval_results['avg_codebleu_score']:.4f}")
+        print(f"    n-gram match score: {eval_results['avg_ngram_score']:.4f}")
+        print(f"    Weighted n-gram match score: {eval_results['avg_weighted_ngram_score']:.4f}")
+        print(f"    Syntax match score: {eval_results['avg_syntax_match_score']:.4f}")
+        print(f"    Dataflow match score: {eval_results['avg_dataflow_match_score']:.4f}")
         print(f"  Parsability rate: {eval_results['parsability_rate']:.4f}")
 
         # Write results to result file

@@ -1,15 +1,7 @@
 from transformers import RobertaTokenizer
-import nltk
-
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt')
-
-from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
 
 from data.load_dataset import load_dataset
-from evaluation.utils import check_java_parsability, evaluate_assertions
+from evaluation.utils import check_java_parsability, evaluate_assertions, evaluate_assertions_with_codebleu_codet5_tokenizer
 
 
 def evaluate_teacher(args):
@@ -17,8 +9,11 @@ def evaluate_teacher(args):
     val_data = load_dataset(args["data_path_validation"], args["max_samples_validation"])
     tokenizer = RobertaTokenizer.from_pretrained(args["teacher_model_name"])
 
-    item_bleu_scores = []
-    chencherry = SmoothingFunction()
+    codebleu_scores = []
+    ngram_match_scores = []
+    weighted_ngram_match_scores = []
+    syntax_match_scores = []
+    dataflow_match_scores = []
 
     parsable_assertion_blocks = 0
     total_assertion_blocks = 0
@@ -41,21 +36,30 @@ def evaluate_teacher(args):
         if check_java_parsability(generated_text):
             parsable_assertion_blocks += 1
 
-        hypothesis_tokens = tokenizer.tokenize(generated_text.lower())
-        reference_tokens_list = [tokenizer.tokenize(reference_text.lower())]
-
         try:
-            bleu_score_item = sentence_bleu(
-                references=reference_tokens_list,
-                hypothesis=hypothesis_tokens,
-                smoothing_function=chencherry.method4
+            codebleu_score_item = evaluate_assertions_with_codebleu_codet5_tokenizer(
+                reference_text.split("\n"),
+                generated_text.split("\n"),
+                tokenizer,
             )
-            item_bleu_scores.append(bleu_score_item)
+            codebleu_scores.append(codebleu_score_item['codebleu'])
+            ngram_match_scores.append(codebleu_score_item['ngram_match_score'])
+            weighted_ngram_match_scores.append(codebleu_score_item['weighted_ngram_match_score'])
+            syntax_match_scores.append(codebleu_score_item['syntax_match_score'])
+            dataflow_match_scores.append(codebleu_score_item['dataflow_match_score'])
         except ZeroDivisionError:
-            item_bleu_scores.append(0.0) # Empty hypothesis or no overlap
-        except Exception as e:
-            print(f"Error calculating BLEU for an item: {e}")
-            item_bleu_scores.append(0.0)
+            codebleu_scores.append(0.0)
+            ngram_match_scores.append(0.0)
+            weighted_ngram_match_scores.append(0.0)
+            syntax_match_scores.append(0.0)
+            dataflow_match_scores.append(0.0)
+        # except Exception as e:
+        #     print(f"Error calculating CodeBLEU for an item: {e}")
+        #     codebleu_scores.append(0.0)
+        #     ngram_match_scores.append(0.0)
+        #     weighted_ngram_match_scores.append(0.0)
+        #     syntax_match_scores.append(0.0)
+        #     dataflow_match_scores.append(0.0)
 
         try:
             metrics = evaluate_assertions(generated_text, reference_text)
@@ -70,7 +74,11 @@ def evaluate_teacher(args):
         except Exception as e:
             print(f"Error evaluating assertion: {e}")
 
-    avg_bleu = sum(item_bleu_scores) / len(item_bleu_scores) if item_bleu_scores else 0.0
+    avg_codebleu = sum(codebleu_scores) / len(codebleu_scores) if codebleu_scores else 0.0
+    avg_ngram = sum(ngram_match_scores) / len(ngram_match_scores) if ngram_match_scores else 0.0
+    avg_weighted_ngram = sum(weighted_ngram_match_scores) / len(weighted_ngram_match_scores) if weighted_ngram_match_scores else 0.0
+    avg_syntax_match = sum(syntax_match_scores) / len(syntax_match_scores) if syntax_match_scores else 0.0
+    avg_dataflow_match = sum(dataflow_match_scores) / len(dataflow_match_scores) if dataflow_match_scores else 0.0
 
     if all_metrics["generated_count"] > 0 and all_metrics["reference_count"] > 0:
         overall_precision = all_metrics["exact_matches"] / all_metrics["generated_count"]
@@ -102,7 +110,11 @@ def evaluate_teacher(args):
         "total_exact_matches": all_metrics["exact_matches"],
         "total_generated": all_metrics["generated_count"],
         "total_reference": all_metrics["reference_count"],
-        "avg_bleu_score": avg_bleu,
+        "avg_codebleu_score": avg_codebleu,
+        "avg_ngram_score": avg_ngram,
+        "avg_weighted_ngram_score": avg_weighted_ngram,
+        "avg_syntax_match_score": avg_syntax_match,
+        "avg_dataflow_match_score": avg_dataflow_match,
         "total_assertion_blocks": total_assertion_blocks,
         "parsable_assertion_blocks": parsable_assertion_blocks,
         "parsability_rate": parsable_assertion_blocks / total_assertion_blocks,
@@ -111,7 +123,11 @@ def evaluate_teacher(args):
     print(f"  Similarity score: {eval_results['similarity_score_avg']:.4f}")
     print(f"  Accuracy: {eval_results['accuracy']:.4f}")
     print(f"  F1 score: {eval_results['f1']:.4f}")
-    print(f"  BLEU score: {eval_results['avg_bleu_score']:.4f}")
+    print(f"  CodeBLEU score: {eval_results['avg_codebleu_score']:.4f}")
+    print(f"    n-gram match score: {eval_results['avg_ngram_score']:.4f}")
+    print(f"    Weighted n-gram match score: {eval_results['avg_weighted_ngram_score']:.4f}")
+    print(f"    Syntax match score: {eval_results['avg_syntax_match_score']:.4f}")
+    print(f"    Dataflow match score: {eval_results['avg_dataflow_match_score']:.4f}")
     print(f"  Parsability rate: {eval_results['parsability_rate']:.4f}")
 
     return eval_results

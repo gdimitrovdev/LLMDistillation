@@ -1,11 +1,11 @@
 import os
 
-def codet5_small_pretrained_1_00_weight_config(base_path):
+def codet5_small_pretrained(base_path):
     return {
         # --- Data Args ---
         "data_path_training": os.path.join(base_path, "data_generation/data/codet5/distillation_data_training.jsonl"),
         "data_path_validation": os.path.join(base_path, "data_generation/data/codet5/distillation_data_validation.jsonl"),
-        "output_dir": os.path.join(base_path, "output_models/student_model_output_codet5_small_pretrained_1_00_weight"),
+        "output_dir": os.path.join(base_path, "output_models/student_model_output_codet5_small_pretrained"),
         "teacher_model_name": "Salesforce/codet5-base",
         "model_name": "Salesforce/codet5-small",
         "model": None, # Used for custom models
@@ -14,11 +14,11 @@ def codet5_small_pretrained_1_00_weight_config(base_path):
 
         # --- Distillation Args ---
         "distillation_temp": 2.0,
-        "alpha_ce": 0.5,            # Weight for student's own Cross-Entropy loss
-        "alpha_distil": 0.5,        # Weight for distillation loss (e.g., KL divergence)
+        "alpha_ce": 0.0,            # Weight for student's own Cross-Entropy loss
+        "alpha_distil": 0.0,        # Weight for distillation loss (e.g., KL divergence)
 
         # --- Training Args ---
-        "epochs": 10,
+        "epochs": 1,
         "batch_size": 4,
         "eval_batch_size": 4,
         "gradient_accumulation_steps": 2,
@@ -45,6 +45,6 @@ def codet5_small_pretrained_1_00_weight_config(base_path):
         "save_total_limit": 2,
         "early_stopping_patience": 5,
         "num_workers": 2,           
-        "max_samples_training": 4500,
+        "max_samples_training": 0,
         "max_samples_validation": 500,
     }
