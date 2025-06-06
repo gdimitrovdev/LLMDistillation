@@ -109,4 +109,10 @@ def evaluate_model(model, tokenizer, dataloader, device):
         "parsability_rate": parsable_assertion_blocks / total_assertion_blocks,
     }
 
+    print(f"  Validation loss: {avg_loss:.4f}")
+    print(f"  Similarity score: {eval_results['similarity_score_avg']:.4f}")
+    print(f"  Accuracy: {eval_results['accuracy']:.4f}")
+    print(f"  F1 score: {eval_results['f1']:.4f}")
+    print(f"  Parsability rate: {eval_results['parsability_rate']:.4f}")
+
     return avg_loss, eval_results
