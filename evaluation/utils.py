@@ -65,9 +65,7 @@ def normalize_assertion(assertion):
     return assertion
 
 
-def evaluate_assertions(generated_assertions, reference_assertions):
-    """Evaluate the quality of generated assertions against reference assertions"""
-
+def normalize_assertions(generated_assertions, reference_assertions):
     # Parse individual assertions if provided as multiline string
     if isinstance(generated_assertions, str):
         # Split by semicolons or newlines
@@ -82,12 +80,23 @@ def evaluate_assertions(generated_assertions, reference_assertions):
     else:
         reference_list = reference_assertions
 
+    # Normalize assertions
+    normalized_generated = [normalize_assertion(a) for a in generated_list]
+    normalized_reference = [normalize_assertion(a) for a in reference_list]
+
+    return normalized_generated, normalized_reference
+
+
+def evaluate_assertions(generated_assertions, reference_assertions):
+    """Evaluate the quality of generated assertions against reference assertions"""
+    normalized_generated, normalized_reference = normalize_assertions(generated_assertions, reference_assertions)
+
     # Special case handling for empty lists
-    if not generated_list or not reference_list:
+    if not normalized_generated or not normalized_reference:
         return {
             "exact_matches": 0,
-            "generated_count": len(generated_list) if generated_list else 0,
-            "reference_count": len(reference_list) if reference_list else 0,
+            "generated_count": len(normalized_generated) if normalized_generated else 0,
+            "reference_count": len(normalized_reference) if normalized_reference else 0,
             "precision": 0,
             "recall": 0,
             "f1": 0,
@@ -95,10 +104,6 @@ def evaluate_assertions(generated_assertions, reference_assertions):
             "similarity_score_avg": 0,
             "similarity_scores": []
         }
-
-    # Normalize assertions
-    normalized_generated = [normalize_assertion(a) for a in generated_list]
-    normalized_reference = [normalize_assertion(a) for a in reference_list]
 
     # Calculate exact matches
     exact_matches = 0
@@ -153,8 +158,9 @@ def evaluate_assertions_with_codebleu_codet5_tokenizer(
         dict: A dictionary containing overall CodeBLEU score and scores for
               its components (ngram_match, weighted_ngram_match, syntax_match, dataflow_match).
     """
+    normalized_generated, normalized_reference = normalize_assertions(generated_assertions, ground_truth_assertions)
 
-    if len(ground_truth_assertions) != len(generated_assertions):
+    if len(normalized_generated) != len(normalized_reference):
         print("Number of assertions should be the same")
         return {
             "codebleu": 0.0,
@@ -169,11 +175,11 @@ def evaluate_assertions_with_codebleu_codet5_tokenizer(
         tokens = [tokenizer.decode(token_id) for token_id in token_ids]
         return tokens
     
-    references_formatted = [[ref] for ref in ground_truth_assertions]
+    references_formatted = [[ref] for ref in normalized_reference]
 
     results = calc_codebleu(
         references=references_formatted,
-        predictions=generated_assertions,
+        predictions=normalized_generated,
         lang="java",
         weights=(0.25, 0.25, 0.25, 0.25),
         tokenizer=custom_code_tokenizer,
