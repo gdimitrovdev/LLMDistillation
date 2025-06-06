@@ -53,13 +53,13 @@ def evaluate_teacher(args):
             weighted_ngram_match_scores.append(0.0)
             syntax_match_scores.append(0.0)
             dataflow_match_scores.append(0.0)
-        # except Exception as e:
-        #     print(f"Error calculating CodeBLEU for an item: {e}")
-        #     codebleu_scores.append(0.0)
-        #     ngram_match_scores.append(0.0)
-        #     weighted_ngram_match_scores.append(0.0)
-        #     syntax_match_scores.append(0.0)
-        #     dataflow_match_scores.append(0.0)
+        except Exception as e:
+            print(f"Error calculating CodeBLEU for an item: {e}")
+            codebleu_scores.append(0.0)
+            ngram_match_scores.append(0.0)
+            weighted_ngram_match_scores.append(0.0)
+            syntax_match_scores.append(0.0)
+            dataflow_match_scores.append(0.0)
 
         try:
             metrics = evaluate_assertions(generated_text, reference_text)
