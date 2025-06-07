@@ -1,7 +1,11 @@
 import torch
 from tqdm import tqdm
+import transformers
 
-from evaluation.utils_no_codeblue import check_java_parsability, evaluate_assertions
+from evaluation.utils import check_java_parsability, evaluate_assertions, calculate_codebertscore_batch
+
+
+transformers.logging.set_verbosity_error()
 
 
 def evaluate_model(model, tokenizer, dataloader, device):
@@ -11,6 +15,8 @@ def evaluate_model(model, tokenizer, dataloader, device):
 
     parsable_assertion_blocks = 0
     total_assertion_blocks = 0
+
+    codebert_f1_scores = []
 
     all_metrics = {
         "exact_matches": 0,
@@ -48,6 +54,18 @@ def evaluate_model(model, tokenizer, dataloader, device):
                 early_stopping=True
             )
 
+            original_target_batch_list = batch["original_target"]
+            decoded_generated_texts_batch = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+
+            if decoded_generated_texts_batch and original_target_batch_list:
+                _, _, F1_codebert_for_this_batch = calculate_codebertscore_batch(
+                    decoded_generated_texts_batch,
+                    original_target_batch_list,
+                    device=str(device)
+                )
+                if F1_codebert_for_this_batch.numel() > 0:
+                    codebert_f1_scores.extend(F1_codebert_for_this_batch.tolist())
+
             # Decode and evaluate
             for i in range(len(input_ids)):
                 generated_text = tokenizer.decode(generated_ids[i], skip_special_tokens=True)
@@ -73,6 +91,8 @@ def evaluate_model(model, tokenizer, dataloader, device):
 
     # Calculate overall metrics
     avg_loss = eval_loss / len(dataloader)
+
+    avg_codebert_f1 = sum(codebert_f1_scores) / len(codebert_f1_scores) if codebert_f1_scores else 0.0
 
     if all_metrics["generated_count"] > 0 and all_metrics["reference_count"] > 0:
         overall_precision = all_metrics["exact_matches"] / all_metrics["generated_count"]
@@ -104,6 +124,7 @@ def evaluate_model(model, tokenizer, dataloader, device):
         "total_exact_matches": all_metrics["exact_matches"],
         "total_generated": all_metrics["generated_count"],
         "total_reference": all_metrics["reference_count"],
+        "avg_codebert_f1_score": avg_codebert_f1,
         "total_assertion_blocks": total_assertion_blocks,
         "parsable_assertion_blocks": parsable_assertion_blocks,
         "parsability_rate": parsable_assertion_blocks / total_assertion_blocks,
@@ -113,6 +134,7 @@ def evaluate_model(model, tokenizer, dataloader, device):
     print(f"  Similarity score: {eval_results['similarity_score_avg']:.4f}")
     print(f"  Accuracy: {eval_results['accuracy']:.4f}")
     print(f"  F1 score: {eval_results['f1']:.4f}")
+    print(f"  CodeBERTScore F1: {eval_results['avg_codebert_f1_score']}")
     print(f"  Parsability rate: {eval_results['parsability_rate']:.4f}")
 
     return avg_loss, eval_results

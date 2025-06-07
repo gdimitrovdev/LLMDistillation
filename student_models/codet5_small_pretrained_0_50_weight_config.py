@@ -13,7 +13,7 @@ def codet5_small_pretrained_0_50_weight_config(base_path):
         "max_tgt_length": 512,
 
         # --- Distillation Args ---
-        "distillation_temp": 2.0,
+        "distillation_temp": 1.0,
         "alpha_ce": 0.5,            # Weight for student's own Cross-Entropy loss
         "alpha_distil": 0.5,        # Weight for distillation loss (e.g., KL divergence)
 

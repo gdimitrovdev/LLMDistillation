@@ -1,7 +1,13 @@
+import transformers
 from transformers import RobertaTokenizer
+from bert_score import score as bert_score_calculate
 
 from data.load_dataset import load_dataset
-from evaluation.utils import check_java_parsability, evaluate_assertions, evaluate_assertions_with_codebleu_codet5_tokenizer
+from evaluation.utils_codeblue import evaluate_assertions_with_codebleu_codet5_tokenizer
+from evaluation.utils import check_java_parsability, evaluate_assertions
+
+
+transformers.logging.set_verbosity_error()
 
 
 def evaluate_teacher(args):
@@ -14,6 +20,9 @@ def evaluate_teacher(args):
     weighted_ngram_match_scores = []
     syntax_match_scores = []
     dataflow_match_scores = []
+
+    codebert_f1_scores = []
+    CODE_MODEL_FOR_BERT_SCORE = "microsoft/graphcodebert-base"
 
     parsable_assertion_blocks = 0
     total_assertion_blocks = 0
@@ -61,6 +70,17 @@ def evaluate_teacher(args):
             syntax_match_scores.append(0.0)
             dataflow_match_scores.append(0.0)
 
+        _, _, F1 = bert_score_calculate(
+            cands=[generated_text],
+            refs=[reference_text],
+            model_type=CODE_MODEL_FOR_BERT_SCORE,
+            lang="java",
+            verbose=False,
+            device=None,
+            num_layers=12,
+        )
+        codebert_f1_scores.append(F1)
+
         try:
             metrics = evaluate_assertions(generated_text, reference_text)
 
@@ -79,6 +99,8 @@ def evaluate_teacher(args):
     avg_weighted_ngram = sum(weighted_ngram_match_scores) / len(weighted_ngram_match_scores) if weighted_ngram_match_scores else 0.0
     avg_syntax_match = sum(syntax_match_scores) / len(syntax_match_scores) if syntax_match_scores else 0.0
     avg_dataflow_match = sum(dataflow_match_scores) / len(dataflow_match_scores) if dataflow_match_scores else 0.0
+
+    avg_codebert_f1 = sum(codebert_f1_scores) / len(codebert_f1_scores) if codebert_f1_scores else 0.0
 
     if all_metrics["generated_count"] > 0 and all_metrics["reference_count"] > 0:
         overall_precision = all_metrics["exact_matches"] / all_metrics["generated_count"]
@@ -115,6 +137,7 @@ def evaluate_teacher(args):
         "avg_weighted_ngram_score": avg_weighted_ngram,
         "avg_syntax_match_score": avg_syntax_match,
         "avg_dataflow_match_score": avg_dataflow_match,
+        "avg_codebert_f1_score": avg_codebert_f1,
         "total_assertion_blocks": total_assertion_blocks,
         "parsable_assertion_blocks": parsable_assertion_blocks,
         "parsability_rate": parsable_assertion_blocks / total_assertion_blocks,
@@ -128,6 +151,7 @@ def evaluate_teacher(args):
     print(f"    Weighted n-gram match score: {eval_results['avg_weighted_ngram_score']:.4f}")
     print(f"    Syntax match score: {eval_results['avg_syntax_match_score']:.4f}")
     print(f"    Dataflow match score: {eval_results['avg_dataflow_match_score']:.4f}")
+    print(f"  CodeBERTScore F1: {eval_results['avg_codebert_f1_score']}")
     print(f"  Parsability rate: {eval_results['parsability_rate']:.4f}")
 
     return eval_results

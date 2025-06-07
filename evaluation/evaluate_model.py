@@ -1,7 +1,12 @@
 import torch
 from tqdm import tqdm
+import transformers
 
-from evaluation.utils import check_java_parsability, evaluate_assertions, evaluate_assertions_with_codebleu_codet5_tokenizer
+from evaluation.utils import check_java_parsability, evaluate_assertions, calculate_codebertscore_batch
+from evaluation.utils_codeblue import evaluate_assertions_with_codebleu_codet5_tokenizer
+
+
+transformers.logging.set_verbosity_error()
 
 
 def evaluate_model(model, tokenizer, dataloader, device):
@@ -14,6 +19,8 @@ def evaluate_model(model, tokenizer, dataloader, device):
     weighted_ngram_match_scores = []
     syntax_match_scores = []
     dataflow_match_scores = []
+
+    codebert_f1_scores = []
 
     parsable_assertion_blocks = 0
     total_assertion_blocks = 0
@@ -53,6 +60,18 @@ def evaluate_model(model, tokenizer, dataloader, device):
                 num_beams=4,
                 early_stopping=True
             )
+
+            original_target_batch_list = batch["original_target"]
+            decoded_generated_texts_batch = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
+
+            if decoded_generated_texts_batch and original_target_batch_list:
+                _, _, F1_codebert_for_this_batch = calculate_codebertscore_batch(
+                    decoded_generated_texts_batch,
+                    original_target_batch_list,
+                    device=str(device)
+                )
+                if F1_codebert_for_this_batch.numel() > 0:
+                    codebert_f1_scores.extend(F1_codebert_for_this_batch.tolist())
 
             # Decode and evaluate
             for i in range(len(input_ids)):
@@ -111,6 +130,8 @@ def evaluate_model(model, tokenizer, dataloader, device):
     avg_syntax_match = sum(syntax_match_scores) / len(syntax_match_scores) if syntax_match_scores else 0.0
     avg_dataflow_match = sum(dataflow_match_scores) / len(dataflow_match_scores) if dataflow_match_scores else 0.0
 
+    avg_codebert_f1 = sum(codebert_f1_scores) / len(codebert_f1_scores) if codebert_f1_scores else 0.0
+
     if all_metrics["generated_count"] > 0 and all_metrics["reference_count"] > 0:
         overall_precision = all_metrics["exact_matches"] / all_metrics["generated_count"]
         overall_recall = all_metrics["exact_matches"] / all_metrics["reference_count"]
@@ -146,6 +167,7 @@ def evaluate_model(model, tokenizer, dataloader, device):
         "avg_weighted_ngram_score": avg_weighted_ngram,
         "avg_syntax_match_score": avg_syntax_match,
         "avg_dataflow_match_score": avg_dataflow_match,
+        "avg_codebert_f1_score": avg_codebert_f1,
         "total_assertion_blocks": total_assertion_blocks,
         "parsable_assertion_blocks": parsable_assertion_blocks,
         "parsability_rate": parsable_assertion_blocks / total_assertion_blocks,
@@ -160,6 +182,7 @@ def evaluate_model(model, tokenizer, dataloader, device):
     print(f"    Weighted n-gram match score: {eval_results['avg_weighted_ngram_score']:.4f}")
     print(f"    Syntax match score: {eval_results['avg_syntax_match_score']:.4f}")
     print(f"    Dataflow match score: {eval_results['avg_dataflow_match_score']:.4f}")
+    print(f"  CodeBERTScore F1: {eval_results['avg_codebert_f1_score']}")
     print(f"  Parsability rate: {eval_results['parsability_rate']:.4f}")
 
     return avg_loss, eval_results

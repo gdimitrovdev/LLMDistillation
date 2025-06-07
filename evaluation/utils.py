@@ -1,7 +1,33 @@
 import re
 from difflib import SequenceMatcher
 import javalang
-from codebleu import calc_codebleu
+from bert_score import score as bert_score_calculate
+import torch
+
+
+def calculate_codebertscore_batch(generated_code_list, reference_code_list, device=None):
+    CODE_MODEL_FOR_BERT_SCORE = "microsoft/graphcodebert-base"
+
+    if not generated_code_list or not reference_code_list or len(generated_code_list) != len(reference_code_list):
+        print("Lengths missmatch between generated and reference assertions:", len(generated_code_list), len(reference_code_list))
+        return torch.tensor([]), torch.tensor([]), torch.tensor([])
+    
+    try:
+        P, R, F1 = bert_score_calculate(
+            cands=generated_code_list,
+            refs=reference_code_list,
+            model_type=CODE_MODEL_FOR_BERT_SCORE,
+            lang="java",
+            verbose=False,
+            device=device,
+            num_layers=12,
+        )
+        return P, R, F1
+    except Exception as e:
+        print(f"Error calculating CodeBERTScore for batch: {e}")
+        num_items = len(generated_code_list)
+        error_score = torch.tensor([float('nan')] * num_items, device=device if device else 'cpu')
+        return error_score, error_score, error_score
 
 
 def check_java_parsability(generated_assertion_block_str):
@@ -137,51 +163,3 @@ def evaluate_assertions(generated_assertions, reference_assertions):
         "similarity_score_avg": sum(similarity_scores) / len(similarity_scores) if similarity_scores else 0,
         "similarity_scores": similarity_scores
     }
-
-
-def evaluate_assertions_with_codebleu_codet5_tokenizer(
-    ground_truth_assertions,
-    generated_assertions,
-    tokenizer,
-):
-    """
-    Calculates CodeBLEU scores for a list of ground truth and generated Java assertions,
-    using RobertaTokenizer from CodeT5 for the n-gram components.
-
-    Args:
-        ground_truth_assertions (list[str]): A list of reference assertion strings.
-        generated_assertions (list[str]): A list of generated assertion strings.
-        tokenizer (obj): The CodeT5 tokenizer.
-
-    Returns:
-        dict: A dictionary containing overall CodeBLEU score and scores for
-              its components (ngram_match, weighted_ngram_match, syntax_match, dataflow_match).
-    """
-    normalized_generated, normalized_reference = normalize_assertions(generated_assertions, ground_truth_assertions)
-
-    if len(normalized_generated) != len(normalized_reference):
-        print("Number of assertions should be the same")
-        return {
-            "codebleu": 0.0,
-            "ngram_match_score": 0.0,
-            "weighted_ngram_match_score": 0.0,
-            "syntax_match_score": 0.0,
-            "dataflow_match_score": 0.0,
-        }
-
-    def custom_code_tokenizer(code_string):
-        token_ids = tokenizer.encode(code_string, add_special_tokens=False)
-        tokens = [tokenizer.decode(token_id) for token_id in token_ids]
-        return tokens
-    
-    references_formatted = [[ref] for ref in normalized_reference]
-
-    results = calc_codebleu(
-        references=references_formatted,
-        predictions=normalized_generated,
-        lang="java",
-        weights=(0.25, 0.25, 0.25, 0.25),
-        tokenizer=custom_code_tokenizer,
-    )
-
-    return results
