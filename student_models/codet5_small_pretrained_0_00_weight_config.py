@@ -1,11 +1,11 @@
 import os
 
-def codet5_small_pretrained_0_50_weight_config(base_path):
+def codet5_small_pretrained_0_00_weight_config(base_path):
     return {
         # --- Data Args ---
         "data_path_training": os.path.join(base_path, "data_generation/data/codet5/distillation_data_training.jsonl"),
         "data_path_validation": os.path.join(base_path, "data_generation/data/codet5/distillation_data_validation.jsonl"),
-        "output_dir": os.path.join(base_path, "output_models/student_model_output_codet5_small_pretrained_0_50_weight"),
+        "output_dir": os.path.join(base_path, "output_models/student_model_output_codet5_small_pretrained_0_00_weight"),
         "teacher_model_name": "Salesforce/codet5-base",
         "model_name": "Salesforce/codet5-small",
         "model": None, # Used for custom models
