@@ -1,6 +1,6 @@
 import os
 
-def codet5_small_pretrained_0_50_weight_config(base_path):
+def codet5_small_pretrained_1_00_weight_config(base_path):
     return {
         # --- Data Args ---
         "data_path_training": os.path.join(base_path, "data_generation/data/codet5/distillation_data_training.jsonl"),
@@ -14,8 +14,8 @@ def codet5_small_pretrained_0_50_weight_config(base_path):
 
         # --- Distillation Args ---
         "distillation_temp": 1.0,
-        "alpha_ce": 0.5,            # Weight for student's own Cross-Entropy loss
-        "alpha_distil": 0.5,        # Weight for distillation loss (e.g., KL divergence)
+        "alpha_ce": 0.0,            # Weight for student's own Cross-Entropy loss
+        "alpha_distil": 1.0,        # Weight for distillation loss (e.g., KL divergence)
 
         # --- Training Args ---
         "epochs": 5,
