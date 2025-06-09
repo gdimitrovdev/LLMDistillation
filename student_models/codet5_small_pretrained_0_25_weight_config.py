@@ -8,7 +8,8 @@ def codet5_small_pretrained_0_25_weight_config(base_path):
         "output_dir": os.path.join(base_path, "output_models/student_model_output_codet5_small_pretrained_0_25_weight"),
         "teacher_model_name": "Salesforce/codet5-base",
         "model_name": "Salesforce/codet5-small",
-        "model": None, # Used for custom models
+        "model_name_custom": None, # Used for custom models
+        "model_config_custom": None, # Used for custom models
         "max_src_length": 1024,
         "max_tgt_length": 512,
 

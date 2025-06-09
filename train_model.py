@@ -4,7 +4,8 @@ from torch.utils.data import DataLoader
 from transformers import (
     T5ForConditionalGeneration,
     RobertaTokenizer,
-    get_linear_schedule_with_warmup
+    get_linear_schedule_with_warmup,
+    T5Config,
 )
 from torch.optim import AdamW
 import os
@@ -491,8 +492,11 @@ def run_student_training(args):
         print(f"Loading model: {args['model_name']}")
         model = T5ForConditionalGeneration.from_pretrained(args["model_name"])
     else:
-        print("Using custom model")
-        model = args["model"]
+        print(f"Using custom model with a similar architecture to {args['model_name_custom']}")
+        config = T5Config.from_pretrained(args['model_name_custom'])
+        if args['model_config_custom']:
+            pass # TODO: add logic to override some model configurations
+        model = T5ForConditionalGeneration(config)
         
     tokenizer = RobertaTokenizer.from_pretrained(args["teacher_model_name"])
 

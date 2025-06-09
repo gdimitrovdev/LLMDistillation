@@ -1,22 +1,22 @@
 import os
 
-def codet5_small_pretrained_0_75_weight_config(base_path):
+def codet5_small_random_1_00_weight_config(base_path):
     return {
         # --- Data Args ---
         "data_path_training": os.path.join(base_path, "data_generation/data/codet5/distillation_data_training.jsonl"),
         "data_path_validation": os.path.join(base_path, "data_generation/data/codet5/distillation_data_validation.jsonl"),
-        "output_dir": os.path.join(base_path, "output_models/student_model_output_codet5_small_pretrained_0_75_weight"),
+        "output_dir": os.path.join(base_path, "output_models/student_model_output_codet5_small_random_1_00_weight"),
         "teacher_model_name": "Salesforce/codet5-base",
-        "model_name": "Salesforce/codet5-small",
-        "model_name_custom": None, # Used for custom models
+        "model_name": None,
+        "model_name_custom": "Salesforce/codet5-small", # Used for custom models
         "model_config_custom": None, # Used for custom models
         "max_src_length": 1024,
         "max_tgt_length": 512,
 
         # --- Distillation Args ---
         "distillation_temp": 1.0,
-        "alpha_ce": 0.25,            # Weight for student's own Cross-Entropy loss
-        "alpha_distil": 0.75,        # Weight for distillation loss (e.g., KL divergence)
+        "alpha_ce": 0.0,            # Weight for student's own Cross-Entropy loss
+        "alpha_distil": 1.0,        # Weight for distillation loss (e.g., KL divergence)
 
         # --- Training Args ---
         "epochs": 5,
