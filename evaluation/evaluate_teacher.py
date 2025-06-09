@@ -79,7 +79,7 @@ def evaluate_teacher(args):
             device=None,
             num_layers=12,
         )
-        codebert_f1_scores.append(F1)
+        codebert_f1_scores.append(F1.item())
 
         try:
             metrics = evaluate_assertions(generated_text, reference_text)
