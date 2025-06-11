@@ -495,7 +495,8 @@ def run_student_training(args):
         print(f"Using custom model with a similar architecture to {args['model_name_custom']}")
         config = T5Config.from_pretrained(args['model_name_custom'])
         if args['model_config_custom']:
-            pass # TODO: add logic to override some model configurations
+            config.num_layers = args['model_config_custom']
+            config.num_decoder_layers = args['model_config_custom']
         model = T5ForConditionalGeneration(config)
         
     tokenizer = RobertaTokenizer.from_pretrained(args["teacher_model_name"])
