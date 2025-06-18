@@ -1,6 +1,6 @@
 import os
 
-def codet5_small_random_1_00_weight_3_layers_config(base_path):
+def codet5_small_random_1_00_weight_12_layers_config(base_path):
     return {
         # --- Data Args ---
         "data_path_training": os.path.join(base_path, "data_generation/data/codet5/distillation_data_training.jsonl"),
